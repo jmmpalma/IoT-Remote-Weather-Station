@@ -1,0 +1,40 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data
+home-server/data/images/*.jpg
+home-server/data/images/*.png
+home-server/logs/*.log
+field-unit/logs/*.log
+
+# Database
+*.sql
+*.dump
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keep structure
+!**/.gitkeep
