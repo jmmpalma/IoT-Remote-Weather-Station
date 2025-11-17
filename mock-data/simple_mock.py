@@ -3,7 +3,7 @@ import time
 import config
 import random
 import utils
-import datetime
+from datetime import datetime
 
 print("=== Mock Data Generator ===")
 print(f"Connecting to MQTT broker at {config.MQTT_BROKER}:{config.MQTT_PORT}")
