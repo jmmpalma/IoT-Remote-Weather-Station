@@ -1,6 +1,7 @@
 import paho.mqtt.client as mqtt
 import time
 import config
+import random
 
 print("Starting simple mock generator...")
 
