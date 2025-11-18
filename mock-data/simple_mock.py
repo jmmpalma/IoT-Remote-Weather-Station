@@ -5,9 +5,20 @@ import random
 import utils
 from datetime import datetime
 
-print("=== Mock Data Generator ===")
-print(f"Connecting to MQTT broker at {config.MQTT_BROKER}:{config.MQTT_PORT}")
+print("=" * 50)
+print("Mock Data Generator with Time Acceleration")
+print("=" * 50)
+print(f"Simulating 24 hours in 10 minutes")
+print(f"Speed multiplier: {config.MOCK_SPEED_MULTIPLIER}x")
+print(f"Data interval: {config.MOCK_DATA_INTERVAL} seconds")
+print(f"Expected data points: ~{int(600 / config.MOCK_DATA_INTERVAL)}")
+print("=" * 50)
 
+# Create simulated time tracker
+sim_time = utils.SimulatedTime(
+    speed_multiplier=config.MOCK_SPEED_MULTIPLIER,
+    start_hour=0  # Start at midnight
+)
 
 client = mqtt.Client()
 client.username_pw_set(config.MQTT_USERNAME, config.MQTT_PASSWORD)
@@ -32,7 +43,7 @@ try:
         # Simple version - just send counter
         # TODO: You'll replace this with realistic sensor functions
         
-        temp = utils.generate_realistic_temperature()
+        temp = utils.generate_realistic_temperature(sim_time)
         
         # Publish to MQTT
         client.publish("sensors/temperature", str(temp))

@@ -8,7 +8,7 @@ import time
 class SimulatedTime:
     """Tracks simulated time that runs faster than real time"""
     
-    def __init__(self, speed_multiplier=1, start_hour=0):
+    def __init__(self, speed_multiplier, start_hour):
         """
         speed_multiplier: How many real seconds = 1 simulated second
         start_hour: What hour to start simulation at (0-23)
