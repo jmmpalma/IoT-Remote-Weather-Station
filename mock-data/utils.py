@@ -45,7 +45,7 @@ class SimulatedTime:
 
 # ============== Sensor Generation Functions ==============
 
-def generate_realistic_temperature(sim_time):
+def generate_temperature(sim_time):
     """Generate temperature based on time of day"""
     
     # Get current hour (0-23)
@@ -68,25 +68,45 @@ def generate_realistic_temperature(sim_time):
     
     return round(temp, 1)
 
-def generate_realistic_humidity():
-    """Humidity is inversely related to temperature"""
-    # TODO: Think about the logic
-    # - When hot (high temp), humidity is low
-    # - When cool (low temp), humidity is high
-    # - Range: 40-80%
+def generate_humidity(sim_time):
+    """Generate humidity (inversely related to temperature)"""
+    temp = generate_temperature(sim_time)
     
-    # Hint: You could use the temperature to calculate humidity
-    # Or create another time-based pattern
+    # When temp is high, humidity is low (and vice versa)
+    # Map temp (15-28) to humidity (80-40)
+    humidity = 80 - (temp - 15) * (40 / 13)
     
-    pass  # Replace with your code
+    noise = random.uniform(-2, 2)
+    humidity = humidity + noise
+    
+    # Clamp to realistic range
+    humidity = max(30, min(90, humidity))
+    
+    return round(humidity, 1)
 
 
 
-def generate_light_level():
+def generate_light_level(sim_time):
     """Light level based on time of day"""
-    # TODO: Think about the logic
-    # - 0 at night (20:00 - 06:00)
-    # - Max at noon (12:00)
-    # - Range: 0-50000 lux
+    hour = sim_time.get_simulated_hour_float()
     
-    pass  # Replace with your code
+    # Dark at night, bright during day
+    sunrise = 6.0
+    sunset = 20.0
+    
+    if hour < sunrise or hour > sunset:
+        # Night time
+        return 0
+    elif sunrise <= hour < sunrise + 2:
+        # Sunrise transition (0 to max over 2 hours)
+        progress = (hour - sunrise) / 2.0
+        return int(config.LIGHT_MAX * progress)
+    elif sunset - 2 < hour <= sunset:
+        # Sunset transition (max to 0 over 2 hours)
+        progress = (sunset - hour) / 2.0
+        return int(config.LIGHT_MAX * progress)
+    else:
+        # Full daylight with slight variation
+        base_light = config.LIGHT_MAX
+        variation = random.uniform(-0.1, 0.1)
+        return int(base_light * (1 + variation))
