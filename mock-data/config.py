@@ -6,7 +6,7 @@ MQTT_PASSWORD = "sensor123"
 
 # Mock Data Settings
 MOCK_DATA_INTERVAL = 5  # seconds between readings
-MOCK_SPEED_MULTIPLIER = 1  # 1 = real time, 60 = 1 min = 1 hour
+MOCK_SPEED_MULTIPLIER = 144  # 1 = real time, 60 = 1 min = 1 hour
 
 # Sensor simulation settings
 TEMP_BASE = 21.5        # Average temperature (°C)
