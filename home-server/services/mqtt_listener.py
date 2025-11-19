@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime
 import config
-from database import Database
+from app.database import Database
 
 # Setup logging
 logging.basicConfig(
