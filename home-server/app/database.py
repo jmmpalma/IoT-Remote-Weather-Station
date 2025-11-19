@@ -10,7 +10,7 @@ class Database:
     """Handles all database operations"""
     
     def __init__(self):
-        """Initialize connection pool"""
+        """Initialize connection pool - Creates 1 to 10 DB connections that will be used as needed"""
         try:
             self.pool = psycopg2.pool.SimpleConnectionPool(
                 1,  # Minimum connections
