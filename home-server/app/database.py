@@ -2,19 +2,27 @@ import psycopg2
 from psycopg2 import pool
 from datetime import datetime, timedelta
 import logging
-import config
+import config 
 
+# Setting up a logger so we can see database events in the console
 logger = logging.getLogger(__name__)
 
 class Database:
-    """Handles all database operations"""
+    """
+    This class acts as the bridge between Python and PostgreSQL.
+    Instead of opening a new connection every single time a sensor sends data 
+    (which is slow), we create a 'Pool' of connections and reuse them."""
     
     def __init__(self):
-        """Initialize connection pool - Creates 1 to 10 DB connections that will be used as needed"""
+        """
+        The Constructor: Runs once when you type 'db = Database()'
+        """
         try:
+            # We create a 'SimpleConnectionPool'. 
+            # 1: Minimum number of connections to keep open.
+            # 5: Maximum connections allowed (prevents crashing the VM RAM).
             self.pool = psycopg2.pool.SimpleConnectionPool(
-                1,  # Minimum connections
-                10,  # Maximum connections
+                1, 5,
                 host=config.DB_HOST,
                 port=config.DB_PORT,
                 database=config.DB_NAME,
@@ -24,15 +32,13 @@ class Database:
             logger.info("Database connection pool created")
         except Exception as e:
             logger.error(f"Failed to create connection pool: {e}")
-            raise
+            raise # Stops the program if the database can't be reached
     
     def get_connection(self):
-        """Get a connection from pool"""
-        return self.pool.getconn()
+        return self.pool.getconn() #Gets a connection from the 5 existing in the pool
     
     def return_connection(self, conn):
-        """Return connection to pool"""
-        self.pool.putconn(conn)
+        self.pool.putconn(conn) #After the operations are done, return the connection to the pool
     
     def save_sensor_reading(self, sensor_name, value, unit=None):
         """
@@ -45,36 +51,38 @@ class Database:
         """
         conn = None
         try:
+            # 1. Borrow a connection from the pool
             conn = self.get_connection()
+            # 2. Create a 'cursor' (the tool that actually writes the SQL)
             cursor = conn.cursor()
+            # 3. Define the SQL command. 
+            # %s is used as placeholder to prevent 'SQL Injection' (hacking).
+            sql = "INSERT INTO sensor_readings (sensor_name, value, unit) VALUES (%s, %s, %s)"               
             
-            cursor.execute(
-                """
-                INSERT INTO sensor_readings (sensor_name, value, unit)
-                VALUES (%s, %s, %s)
-                """,
-                (sensor_name, value, unit)
-            )
-            
+            # 4. Execute the command with our data
+            cursor.execute(sql,(sensor_name, value, unit))
+
+            # 5. COMMIT: This actually saves the data permanently. 
+            # If there isn't a commit, the data disappears when the script stops!
             conn.commit()
             cursor.close()
             logger.debug(f"Saved: {sensor_name} = {value}")
             
         except Exception as e:
             logger.error(f"Error saving reading: {e}")
+            # 6. ROLLBACK: If there was an error, undo everything in this transaction
+            # so the database doesn't get corrupted or stuck.
             if conn:
                 conn.rollback()
         finally:
-            if conn:
-                self.return_connection(conn)
+            # 7. ALWAYS return the connection, even if the code crashed.
+            if conn: self.return_connection(conn)
     
     def get_latest_reading(self, sensor_name):
         """
-        Get the most recent reading for a sensor
-        
+        Get the most recent reading for a sensor, used to display current values.
         Args:
             sensor_name: Name of the sensor
-            
         Returns:
             dict with 'timestamp', 'value', 'unit' or None if no data
         """
@@ -83,18 +91,11 @@ class Database:
             conn = self.get_connection()
             cursor = conn.cursor()
             
-            cursor.execute(
-                """
-                SELECT timestamp, value, unit
-                FROM sensor_readings
-                WHERE sensor_name = %s
-                ORDER BY timestamp DESC
-                LIMIT 1
-                """,
-                (sensor_name,)
-            )
+            sql = "SELECT timestamp, value, unit FROM sensor_readings WHERE sensor_name = %s ORDER BY timestamp DESC LIMIT 1"
+
+            cursor.execute(sql,(sensor_name,))
             
-            row = cursor.fetchone()
+            row = cursor.fetchone() # Fetch the single row result
             cursor.close()
             
             if row:
@@ -112,181 +113,8 @@ class Database:
             if conn:
                 self.return_connection(conn)
     
-    def get_recent_readings(self, sensor_name=None, hours=24):
-        """
-        Get recent sensor readings
-        
-        Args:
-            sensor_name: Optional sensor name filter
-            hours: How many hours back to query
-            
-        Returns:
-            List of dicts with 'timestamp', 'sensor', 'value', 'unit'
-        """
-        conn = None
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            if sensor_name:
-                cursor.execute(
-                    """
-                    SELECT timestamp, sensor_name, value, unit
-                    FROM sensor_readings
-                    WHERE sensor_name = %s
-                      AND timestamp > NOW() - INTERVAL '%s hours'
-                    ORDER BY timestamp ASC
-                    """,
-                    (sensor_name, hours)
-                )
-            else:
-                cursor.execute(
-                    """
-                    SELECT timestamp, sensor_name, value, unit
-                    FROM sensor_readings
-                    WHERE timestamp > NOW() - INTERVAL '%s hours'
-                    ORDER BY timestamp ASC
-                    """,
-                    (hours,)
-                )
-            
-            results = cursor.fetchall()
-            cursor.close()
-            
-            return [
-                {
-                    'timestamp': row[0].isoformat(),
-                    'sensor': row[1],
-                    'value': float(row[2]),
-                    'unit': row[3]
-                }
-                for row in results
-            ]
-            
-        except Exception as e:
-            logger.error(f"Error getting readings: {e}")
-            return []
-        finally:
-            if conn:
-                self.return_connection(conn)
-    
-    def save_image(self, filename, trigger='unknown'):
-        """
-        Save image metadata to database
-        
-        Args:
-            filename: Image filename
-            trigger: What triggered the capture (e.g., 'motion')
-        """
-        conn = None
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute(
-                """
-                INSERT INTO images (filename, trigger)
-                VALUES (%s, %s)
-                """,
-                (filename, trigger)
-            )
-            
-            conn.commit()
-            cursor.close()
-            logger.info(f"Saved image metadata: {filename}")
-            
-        except Exception as e:
-            logger.error(f"Error saving image: {e}")
-            if conn:
-                conn.rollback()
-        finally:
-            if conn:
-                self.return_connection(conn)
-    
-    def get_recent_images(self, limit=20):
-        """
-        Get recent image metadata
-        
-        Args:
-            limit: Maximum number of images to return
-            
-        Returns:
-            List of dicts with image info
-        """
-        conn = None
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute(
-                """
-                SELECT timestamp, filename, trigger
-                FROM images
-                ORDER BY timestamp DESC
-                LIMIT %s
-                """,
-                (limit,)
-            )
-            
-            results = cursor.fetchall()
-            cursor.close()
-            
-            return [
-                {
-                    'timestamp': row[0].isoformat(),
-                    'filename': row[1],
-                    'trigger': row[2]
-                }
-                for row in results
-            ]
-            
-        except Exception as e:
-            logger.error(f"Error getting images: {e}")
-            return []
-        finally:
-            if conn:
-                self.return_connection(conn)
-    
-    def cleanup_old_data(self):
-        """Remove old data to save space"""
-        conn = None
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute(
-                """
-                DELETE FROM sensor_readings
-                WHERE timestamp < NOW() - INTERVAL '%s days'
-                """,
-                (config.KEEP_READINGS_DAYS,)
-            )
-            readings_deleted = cursor.rowcount
-            
-            cursor.execute(
-                """
-                DELETE FROM images
-                WHERE timestamp < NOW() - INTERVAL '%s days'
-                """,
-                (config.KEEP_IMAGES_DAYS,)
-            )
-            images_deleted = cursor.rowcount
-            
-            conn.commit()
-            cursor.close()
-            
-            logger.info(f"Cleanup: {readings_deleted} readings, {images_deleted} images deleted")
-            
-        except Exception as e:
-            logger.error(f"Error during cleanup: {e}")
-            if conn:
-                conn.rollback()
-        finally:
-            if conn:
-                self.return_connection(conn)
-    
     def close(self):
-        """Close all connections in pool"""
+        #Close all connections in the pool
         if self.pool:
             self.pool.closeall()
             logger.info("Database connections closed")

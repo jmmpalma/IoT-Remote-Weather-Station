@@ -12,8 +12,8 @@ MQTT_TOPICS = [
 # Database Settings
 DB_HOST = "localhost"
 DB_PORT = 5432
-DB_NAME = "sensordata"
-DB_USER = "sensoruser"
+DB_NAME = "iot_remote_station_db"
+DB_USER = "joaommpalma"
 DB_PASSWORD = "sensorpass123"
 
 # Web Server Settings
