@@ -132,9 +132,5 @@ if __name__ == '__main__':
     latest = db.get_latest_reading('test_sensor')
     print(f"Latest: {latest}")
     
-    print("Getting recent readings...")
-    recent = db.get_recent_readings('test_sensor', hours=1)
-    print(f"Found {len(recent)} readings")
-    
     db.close()
     print("Database test complete!")

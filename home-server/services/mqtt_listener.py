@@ -85,7 +85,7 @@ def main():
     logger.info(f"Broker: {config.MQTT_BROKER}:{config.MQTT_PORT}")
     logger.info(f"Topics: {', '.join(config.MQTT_TOPICS)}")
     
-    client = mqtt.Client()
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
     client.username_pw_set(config.MQTT_USERNAME, config.MQTT_PASSWORD) #Uses MQTT credentials from config.py
     client.on_connect = on_connect
     client.on_message = on_message
