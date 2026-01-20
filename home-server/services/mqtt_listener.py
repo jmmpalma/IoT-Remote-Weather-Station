@@ -86,6 +86,8 @@ def main():
     logger.info(f"Topics: {', '.join(config.MQTT_TOPICS)}")
     
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
+    print(f"DEBUG: Username is '{config.MQTT_USERNAME}' (length: {len(config.MQTT_USERNAME)})")
+    print(f"DEBUG: Password length is: {len(config.MQTT_PASSWORD)}")
     client.username_pw_set(config.MQTT_USERNAME, config.MQTT_PASSWORD) #Uses MQTT credentials from config.py
     client.on_connect = on_connect
     client.on_message = on_message
