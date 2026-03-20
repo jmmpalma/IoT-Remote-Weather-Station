@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Station Control Center</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1a1a1a; color: white; margin: 20px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .card { background: #2d2d2d; padding: 20px; border-radius: 10px; border-left: 5px solid #4CAF50; }
+        .full-width { grid-column: span 2; }
+        h2 { margin-top: 0; color: #aaa; font-size: 0.9em; text-transform: uppercase; }
+        .big-number { font-size: 3em; font-weight: bold; color: #4CAF50; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+        th { text-align: left; color: #888; border-bottom: 1px solid #444; padding: 5px; }
+        td { padding: 8px 5px; border-bottom: 1px solid #333; }
+        .log-ERROR { color: #ff4444; font-weight: bold; }
+        .log-PIR_TRIGGER { color: #ffeb3b; }
+        .log-RATE_LIMIT { color: #ff9800; font-style: italic; }
+        .header-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 10px;
+        }
+        #last-updated {
+            font-size: 0.85em;
+            color: #888;
+        }
+        /* Fix for small charts on mobile */
+        .chart-container {
+            position: relative;
+            height: 35vh;    /* 35% of the screen height */
+            width: 100%;     /* Full width of the card */
+        }
+        .chart-container-small {
+            position: relative;
+            height: 25vh;    /* Smaller height for the CPU chart */
+            width: 100%;
+        }
+        @media (max-width: 768px) {
+            .header-container {
+                flex-direction: column; /* Stack title and time on phones */
+            }
+            .chart-container {
+                height: 40vh; /* Make chart even taller on phones */
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header-container">
+        <h1>🛰️ Remote Weather Station</h1>
+        <div id="last-updated">Waiting for data...</div>
+    </div>
+    
+    <div class="grid">
+        <!-- Gauges -->
+        <div class="card">
+            <h2>Current Temperature</h2>
+            <div id="cur-temp" class="big-number">--°C</div>
+        </div>
+        <div class="card">
+            <h2>Current Humidity</h2>
+            <div id="cur-hum" class="big-number">--%</div>
+        </div>
+
+        <!-- Graphs -->
+        <div class="card full-width">
+            <h2>Temperature/Humidity (last 24h)</h2>
+            <div class="chart-container">
+                <canvas id="weatherChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>System Health (CPU Temp)</h2>
+            <canvas id="cpuChart" height="150"></canvas>
+        </div>
+
+        <!-- Logs -->
+        <div class="card">
+            <h2>Live System Logs</h2>
+            <table>
+                <thead><tr><th>Time</th><th>Event</th><th>Description</th></tr></thead>
+                <tbody id="log-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let weatherChart, cpuChart;
+
+        async function updateDashboard() {
+            try {
+                const res = await fetch('/api/data?t=' + new Date().getTime());
+                const data = await res.json();
+
+                const now = new Date();
+                document.getElementById('last-updated').innerText = "Last Update: " + now.toLocaleString();
+
+                if (data.weather.length === 0) {
+                    console.warn("No data returned from database.");
+                    return;
+                }
+
+                // 1. Update Labels
+                const latest = data.weather[data.weather.length - 1];
+                document.getElementById('cur-temp').innerText = latest.temp + "°C";
+                document.getElementById('cur-hum').innerText = latest.hum + "%";
+
+                // 2. Update Logs
+                const tbody = document.getElementById('log-body');
+                tbody.innerHTML = data.logs.map(l => `
+                    <tr class="log-${l.event}">
+                        <td>${l.time}</td>
+                        <td>${l.event}</td>
+                        <td>${l.msg}</td>
+                    </tr>
+                `).join('');
+
+                // 3. Update Dual-Axis Weather Chart
+                const wCtx = document.getElementById('weatherChart').getContext('2d');
+                
+                // Check if the chart exists. If it does, destroy it so we can redraw it.
+                if (weatherChart) {
+                    weatherChart.destroy();
+                }
+
+                weatherChart = new Chart(wCtx, {
+                    type: 'line',
+                    data: {
+                        // This now contains "16/03 21:05" instead of just "21:05"
+                        labels: data.weather.map(w => w.time), 
+                        datasets: [
+                            {
+                                label: 'Temperature (°C)',
+                                data: data.weather.map(w => w.temp),
+                                borderColor: '#4CAF50',
+                                backgroundColor: 'transparent',
+                                yAxisID: 'y-temp',
+                                tension: 0.3,
+                                pointRadius: 2
+                            },
+                            {
+                                label: 'Humidity (%)',
+                                data: data.weather.map(w => w.hum),
+                                borderColor: '#2196F3',
+                                backgroundColor: 'transparent',
+                                yAxisID: 'y-hum',
+                                tension: 0.3,
+                                pointRadius: 2
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            'y-temp': {
+                                type: 'linear', position: 'left',
+                                min: -5, max: 45,
+                                title: { display: true, text: 'Temp (°C)', color: '#4CAF50' },
+                                ticks: { color: '#4CAF50' },
+                                grid: { color: '#444' }
+                            },
+                            'y-hum': {
+                                type: 'linear', position: 'right',
+                                min: 20, max: 100,
+                                title: { display: true, text: 'Hum (%)', color: '#2196F3' },
+                                ticks: { color: '#2196F3' },
+                                grid: { drawOnChartArea: false }
+                            },
+                            x: {
+                                ticks: { 
+                                    color: '#888',
+                                    maxRotation: 45, // Rotate labels so they don't overlap
+                                    minRotation: 45 
+                                },
+                                grid: { color: '#333' }
+                            }
+                        },
+                        plugins: {
+                            legend: { labels: { color: 'white' } }
+                        }
+                    }
+                });
+
+                // 4. Update CPU Chart
+                const cCtx = document.getElementById('cpuChart').getContext('2d');
+                if (cpuChart) cpuChart.destroy();
+                cpuChart = new Chart(cCtx, {
+                    type: 'line',
+                    data: {
+                        labels: data.cpu.map(c => c.time),
+                        datasets: [{
+                            label: 'Pi CPU Temp',
+                            data: data.cpu.map(c => c.val),
+                            borderColor: '#2196F3',
+                            backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                            fill: true
+                        }]
+                    }
+                });
+
+                console.log("Dashboard updated at: " + new Date().toLocaleTimeString());
+            } catch (err) {
+                console.error("Failed to fetch data", err);
+            }       
+        }
+
+        // 1. Run immediately on page load
+        updateDashboard();
+
+        // 2. SET THE REFRESH INTERVAL (in milliseconds)
+        // 60000 ms = 1 minute. 
+        setInterval(updateDashboard, 60000);
+    </script>
+</body>
+</html>

@@ -1,109 +1,63 @@
-import sys
-import os
-
-# Add parent directory to path so we can import from app/
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import paho.mqtt.client as mqtt
 import json
-import logging
+import psycopg2
 from datetime import datetime
-import config
-from app.database import Database
+import config # Importing your local config.py file
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(os.path.join(config.LOG_DIR, 'mqtt_listener.log')),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+# This function runs as soon as the VM connects to the local Mosquitto broker
+def on_connect(client, userdata, flags, reason_code, properties):
+    print(f"Connected to Broker. Result: {reason_code}")
+    # Subscribe to the data topic (temp/hum) and the logs topic (events)
+    client.subscribe("sensors/data")
+    client.subscribe("sensors/logs")
 
-# Create database connection
-db = Database()
-
-def on_connect(client, userdata, flags, rc):
-    """Called when connected to MQTT broker"""
-    if rc == 0:
-        logger.info("Connected to MQTT broker")
-        
-        for topic in config.MQTT_TOPICS:
-            client.subscribe(topic)
-            logger.info(f"Subscribed to: {topic}")
-    else:
-        logger.error(f"Connection failed with code {rc}")
-
-
+# This function runs every time a new MQTT message arrives
 def on_message(client, userdata, msg):
-    """Called when message received"""
     try:
-        topic = msg.topic
-        payload = msg.payload.decode('utf-8')
+        # Convert the incoming bytes message into a Python Dictionary
+        payload = json.loads(msg.payload.decode())
         
-        logger.debug(f"Received: {topic} -> {payload}")
+        # Open a fresh connection to the PostgreSQL database
+        conn = psycopg2.connect(
+            dbname=config.DB_NAME,
+            user="joaommpalma", # Updated as requested
+            password=config.DB_PASSWORD,
+            host=config.DB_HOST
+        )
+        cur = conn.cursor()
+
+        # Route the data based on which "topic" it arrived on
+        if msg.topic == "sensors/data":
+            # Insert temperature and humidity into weather_data table
+            cur.execute(
+                "INSERT INTO weather_data (temperature, humidity) VALUES (%s, %s)",
+                (payload['temp'], payload['hum'])
+            )
+            print(f"Stored Data: {payload['temp']}C, {payload['hum']}%")
         
-        if topic.startswith('sensors/'):
-            handle_sensor_data(topic, payload)
-        # elif topic.startswith('camera/'):
-        #     handle_camera_data(topic, payload)
-        # elif topic.startswith('system/'):
-        #     handle_system_data(topic, payload)
-        else:
-            logger.warning(f"Unknown topic: {topic}")
-            
+        elif msg.topic == "sensors/logs":
+            # Insert system events into system_logs table
+            cur.execute(
+                "INSERT INTO system_logs (event_type, message) VALUES (%s, %s)",
+                (payload['event'], payload['message'])
+            )
+            print(f"Logged Event: {payload['event']}")
+
+        # Commit changes and close the connection
+        conn.commit()
+        cur.close()
+        conn.close()
     except Exception as e:
-        logger.error(f"Error processing message: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"Error processing message: {e}")
 
-def handle_sensor_data(topic, payload):
-    """Process sensor data messages"""
-    sensor_name = topic.split('/')[-1] #Get'sensor name from topic, e.g. topic = sensors/temperature -> sensor_name = temperature
-    
-    try:
-        data = json.loads(payload)
-        value = data.get('value')
-        unit = data.get('unit', None)
-    except (json.JSONDecodeError, AttributeError):
-        try:
-            value = float(payload)
-            unit = None
-        except ValueError:
-            logger.error(f"Could not parse value: {payload}")
-            return
-    
-    db.save_sensor_reading(sensor_name, value, unit)
-    logger.info(f"Saved: {sensor_name} = {value} {unit if unit else ''}")
+# Initialize the MQTT Client (Version 2.x)
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+client.username_pw_set(config.MQTT_USERNAME, config.MQTT_PASSWORD)
+client.on_connect = on_connect
+client.on_message = on_message
 
-
-def main():
-    """Main entry point"""
-    logger.info("MQTT Listener Service Starting")
-    logger.info(f"Broker: {config.MQTT_BROKER}:{config.MQTT_PORT}")
-    logger.info(f"Topics: {', '.join(config.MQTT_TOPICS)}")
-    
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
-    print(f"DEBUG: Username is '{config.MQTT_USERNAME}' (length: {len(config.MQTT_USERNAME)})")
-    print(f"DEBUG: Password length is: {len(config.MQTT_PASSWORD)}")
-    client.username_pw_set(config.MQTT_USERNAME, config.MQTT_PASSWORD) #Uses MQTT credentials from config.py
-    client.on_connect = on_connect
-    client.on_message = on_message
-    
-    try:
-        client.connect(config.MQTT_BROKER, config.MQTT_PORT, 60)
-        logger.info("Connected successfully")
-    except Exception as e:
-        logger.error(f"Failed to connect: {e}")
-        return
-    
-    try:
-        client.loop_forever()
-    except KeyboardInterrupt:
-        client.disconnect()
-        db.close()
-
-if __name__ == '__main__':
-    main()
+print("Starting Listener...")
+# Connect to the local broker on the VM
+client.connect("localhost", 1883, 60)
+# Start the loop that listens forever
+client.loop_forever()

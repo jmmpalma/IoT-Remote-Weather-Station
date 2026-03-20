@@ -1,8 +1,8 @@
 # MQTT Settings
-MQTT_BROKER = "localhost"
+MQTT_BROKER = "100.94.32.51"
 MQTT_PORT = 1883
 MQTT_USERNAME = "sensors"
-MQTT_PASSWORD = "sensor123"
+MQTT_PASSWORD = "Kristin.2026!"
 MQTT_TOPICS = [
     "sensors/#",      # All sensor topics
     "camera/#",       # Camera topics
