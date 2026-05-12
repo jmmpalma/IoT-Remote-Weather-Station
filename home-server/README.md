@@ -1,119 +1,49 @@
-# IoT Monitoring System - Home Server
+# IoT Remote Weather Station
 
-Backend server for IoT sensor monitoring and data visualization.
+This project is a full-stack IoT system designed to monitor environmental conditions and security events. It consists in two "moving parts", a remote field unit (Raspberry Pi Zero 2W) and a cloud-based data hub (Google Cloud Platform). 
 
-## Project Structure
-```
-home-server/
-├── app/              # Core application modules
-├── services/         # Long-running services
-├── web/             # Web interface files
-├── tests/           # Test scripts
-├── scripts/         # Utility scripts
-├── data/            # Data storage
-└── logs/            # Log files
-```
+## 📋 Project Overview
+The system captures temperature, humidity, pressure, and motion data. When it detetcts motion, it takes a picture. This information is transmitted through a secure, private network to a database and visualized on a responsive web dashboard accessible from any authorized device.
+The final version of this system aims to be fully autonomous, working solely with energy supplied by a solar panel.
 
-## Setup
+## 🏗️ How It Is Being Done
 
-### Prerequisites
+### 1. Data Capture & Edge Logic
+*   **Periodic Sampling:** A Raspberry Pi Zero 2W reads environmental data every 15 minutes.
+*   **Event Handling:** A PIR sensor monitors for motion in real-time, and takes pictures when it detects motion. To prevent "data flooding," I implemented a rate-limiting algorithm that pauses alerts if too many triggers occur in a short window.
 
-- Python 3.8+
-- PostgreSQL 12+
-- Mosquitto MQTT broker
+### 2. Secure Networking (Zero-Trust Architecture)
+*   **Tailscale Mesh:** Instead of opening ports to the public internet, I used Tailscale to create a private, encrypted tunnel between the Pi, the Cloud VM, and my personal devices.
+*   **MQTT Protocol:** Data is sent using the lightweight MQTT protocol (Mosquitto), which is the industry standard for IoT communication.
 
-### Installation
-```bash
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
+### 3. Cloud Infrastructure & Storage
+*   **Database:** A PostgreSQL database running on a Google Cloud VM stores every sensor reading and system log permanently.
+*   **Data Ingestion:** A Python-based "Listener" script runs 24/7 to catch incoming MQTT messages and sort them into the correct database tables.
 
-# Install dependencies
-pip install -r requirements.txt
+### 4. Web Visualization
+*   **Flask Dashboard:** A custom web server built with Flask provides a live UI.
+*   **Dynamic Charts:** Uses Chart.js to display 24-hour trends for temperature and humidity using a dual-axis graph.
+*   **System Monitoring:** The dashboard also tracks the Pi's CPU temperature and displays a live log of all system events.
 
-# Setup database
-psql -U postgres -f scripts/setup_database.sql
-```
+### 5. Industrial Reliability
+*   **Systemd Services:** All scripts (on both the Pi and the VM) are configured as Linux services. They start automatically on boot and restart themselves if a crash occurs.
 
-## Usage
+## 🛠️ Tools & Components
 
-### Start MQTT Listener
-```bash
-python run.py listener
-```
+### **Hardware**
+*   **Raspberry Pi Zero 2W:** The central controller.
+*   **BME280 Sensor:** High-precision sensor for Temp/Hum/Pressure via I2C.
+*   **PIR Sensor:** Infrared motion detection.
+*   **Keyes RGB LED:** Physical status indicator.
+*   **Ethernet Cabling:** Used high-quality twisted-pair wiring to ensure signal stability over longer distances.
 
-### Start Web Server
-```bash
-python run.py web
-```
-
-Then open: http://localhost:5000
-
-### Run Tests
-```bash
-python run.py test
-```
-
-## Configuration
-
-Edit `config.py` to change settings:
-- MQTT broker connection
-- Database credentials
-- Web server port
-- Data retention periods
-
-## Development
-
-### Running in VS Code
-
-1. Open folder in VS Code
-2. Select Python interpreter: `venv/bin/python`
-3. Set breakpoints
-4. Press F5 to debug
-
-### Project Components
-
-- **app/database.py** - Database operations
-- **services/mqtt_listener.py** - MQTT message handler
-- **services/web_server.py** - Web dashboard
-- **web/templates/** - HTML templates
-- **web/static/** - CSS, JavaScript
-
-## License
-
-Private project
-```
+### **Software & Cloud**
+*   **Google Cloud Platform (GCP):** Compute Engine VM.
+*   **Languages:** Python 3.13, SQL, JavaScript, HTML, CSS.
+*   **Networking:** Tailscale (WireGuard), Mosquitto (MQTT).
+*   **Database:** PostgreSQL.
+*   **Web Framework:** Flask.
+*   **Hardware Control:** GPIO Zero and Adafruit CircuitPython libraries.
 
 ---
-
-## Final Structure View
-```
-~/iot-remote/
-│
-├── home-server/              # Backend (organized!)
-│   ├── app/
-│   │   ├── __init__.py
-│   │   ├── database.py       ✅ Core database module
-│   │   └── utils.py
-│   ├── services/
-│   │   ├── __init__.py
-│   │   ├── mqtt_listener.py  ✅ MQTT service
-│   │   └── web_server.py     ⏳ Next to create
-│   ├── web/
-│   │   ├── templates/
-│   │   └── static/
-│   ├── tests/
-│   ├── scripts/
-│   ├── data/
-│   ├── logs/
-│   ├── venv/
-│   ├── config.py
-│   ├── run.py                ✅ Main entry point
-│   ├── requirements.txt
-│   └── README.md
-│
-└── mock-data/                # Client (already organized)
-    ├── config.py
-    ├── mock_generator.py
-    ├── venv/
-    └── requirements.txt
+**Developer:** João M. M. Palma

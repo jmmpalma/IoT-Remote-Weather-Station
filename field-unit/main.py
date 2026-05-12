@@ -1,7 +1,9 @@
 import time
 import json
 import board
-import adafruit_dht
+import busio
+from adafruit_bme280 import basic as adafruit_bme280
+import adafruit_bh1750
 import paho.mqtt.client as mqtt
 from gpiozero import MotionSensor, RGBLED, CPUTemperature
 import config
@@ -20,12 +22,10 @@ cpu = CPUTemperature()
 cpu_temp = round(cpu.temperature, 1) # Get Pi's internal heat
 
 # ######################  Hardware Initialization  ######################
-# LED pins: Red=27, Green=22, Blue=23
-led = RGBLED(red=27, green=22, blue=23)
+# LED pins: Red=13, Green=19, Blue=26
+led = RGBLED(red=13, green=19, blue=26)
 # PIR on GPIO 17
 pir = MotionSensor(17)
-# DHT22 on GPIO 4 (Standard)
-dht_device = adafruit_dht.DHT22(board.D4)
 
 ########################  Helper Functions  ######################
 # Function to keep the LED pulsing green in the background
@@ -77,7 +77,6 @@ def on_no_motion():
 pir.when_motion = on_motion
 pir.when_no_motion = on_no_motion
 
-
 # ######################  MQTT Setup  ######################
 # Runs when the Pi successfully connects to the Cloud MQTT Broker
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -89,43 +88,85 @@ client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 client.username_pw_set(config.MQTT_USERNAME, config.MQTT_PASSWORD)
 client.on_connect = on_connect
 
+
+###################### I2C Bus Setup #####################
+# Both BME280 and BH1750 share these pins
+i2c_bus = board.I2C()
+
+# Initialize BME280 with safety check
+bme_sensor = None
+try:
+    bme_sensor = adafruit_bme280.Adafruit_BME280_I2C(i2c_bus, address=0x76)
+    print("BME280: Connected")
+except Exception as e:
+    print(f"BME280 Not connected: Error {e}")
+    send_log("SENSOR_MISSING", f"BME280 could not be initialized: ({e})")
+
+# Initialize BH1750 with safety check
+light_sensor = None
+try:
+    light_sensor = adafruit_bh1750.BH1750(i2c_bus)
+    print("BH1750: Connected")
+except Exception as e:
+    print("BH1750: Not connected")
+    send_log("SENSOR_MISSING", f"BH1750 could not be initialized: ({e})")
+
 ######################  Main Logic ######################
 try:
     print(f"Connecting to VM at {config.MQTT_BROKER}...")
     client.connect(config.MQTT_BROKER, 1883, 60)
-    client.loop_start() # Starts a background thread for MQTT communication
+    client.loop_start()
+    time.sleep(2) # Starts a background thread for MQTT communication
     start_heartbeat()   # Starts the Green pulse
 
     while True:
-        # Capturing data from the DHT22
-        # The DHT22 is unstable; we try 3 times before giving up
-        temp, hum = None, None
-        for _ in range(3):
-            try:
-                temp = dht_device.temperature
-                hum = dht_device.humidity
-                if temp is not None: break
-            except RuntimeError:
-                # DHT22 often throws a error; we just wait and retry
-                time.sleep(2)
-    
-        # If we got a valid reading, send it to the Cloud
-        if temp is not None:
-            # Send DATA to weather_data table
-            payload = json.dumps({"temp": temp, "hum": hum})
-            client.publish("sensors/data", payload)
-            
-            # Send a rich log to the system_logs table
-            # We include Ambient Temp, Humidity, and CPU Temp in the message
-            log_msg = f"Health Status | CPU: {cpu_temp}C | Ambient: {temp}C | Hum: {hum}%"
-            send_log("HEARTBEAT", log_msg)
-            print(f"Heartbeat Sent: {log_msg}")
-        else:
-            # Even if DHT22 fails, we still send the CPU temp log so we know the Pi is alive
-            log_msg = f"DHT22 Error | CPU Temp: {cpu_temp}C"
-            send_log("SYSTEM_WARNING", log_msg)
-            print(f"Warning Sent: {log_msg}")
+        # --- 1. Get CPU Temp (Moved inside loop to keep it fresh) ---
+        cpu_temp = round(cpu.temperature, 1)
 
+        # --- 2. Read BME280 ---
+        temp, hum, press = 0.0, 0.0, 0.0
+        if bme_sensor:
+            success = False
+            for attempt in range(3): # Try up to 3 times
+                try:
+                    temp = round(bme_sensor.temperature, 1)
+                    hum = round(bme_sensor.humidity, 1)
+                    press = round(bme_sensor.pressure, 1)
+                    success = True
+                    break # If read works, exit the retry loop
+                except Exception as e:
+                    print(f"BME280 read failed (Attempt {attempt+1}/3): {str(e)}")
+                    time.sleep(0.5) # Short delay before retrying
+            if not success:
+                send_log("SENSOR_ERROR", "BME280 read failed after 3 attempts.")
+        else:
+            send_log("SENSOR_MISSING", "BME280 not found on I2C bus.")
+
+        # --- 3. Read BH1750 (Light) ---
+        lux = 0.0
+        if light_sensor:
+            try:
+                lux = round(light_sensor.lux, 1)
+            except Exception as e:
+                send_log("SENSOR_ERROR", f"BH1750 read failed: {str(e)}")
+        # else:
+            # send_log("SENSOR_MISSING", "BME280 not found on I2C bus.") - Uncomment when sensor is working
+
+        # 4. Send DATA payload
+        data_payload = {
+            "temp": temp
+            ,"hum": hum
+            ,"press": press
+            ,"lux": lux
+        }
+        client.publish("sensors/data", json.dumps(data_payload))
+        
+        # # 5. Send HEARTBEAT log
+        # We include Ambient Temp, Humidity, and CPU Temp in the message
+        log_msg = f"Health Status | CPU: {cpu_temp}C | Ambient: {temp}C | Hum: {hum}%"
+        send_log("HEARTBEAT", log_msg)
+        print(f"Heartbeat Sent: {log_msg}")
+    
         time.sleep(900) # 15 Minute Cycle
 
 except KeyboardInterrupt:

@@ -30,10 +30,10 @@ def on_message(client, userdata, msg):
         if msg.topic == "sensors/data":
             # Insert temperature and humidity into weather_data table
             cur.execute(
-                "INSERT INTO weather_data (temperature, humidity) VALUES (%s, %s)",
-                (payload['temp'], payload['hum'])
+                "INSERT INTO weather_data (temperature, humidity, pressure) VALUES (%s, %s, %s)",
+                (payload['temp'], payload['hum'], payload['press'])
             )
-            print(f"Stored Data: {payload['temp']}C, {payload['hum']}%")
+            print(f"Stored Data: {payload['temp']}C, {payload['hum']}%, {payload['press']} hPa")
         
         elif msg.topic == "sensors/logs":
             # Insert system events into system_logs table
